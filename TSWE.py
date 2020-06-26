@@ -1,13 +1,15 @@
 """
+(c) Ayan Sengupta - 2020
 License: MIT License
 
-Implementation of TSWE (Joint Sentiment-Topic model)
+Implementation of WS-TSWE (Weakly Supervised Topic-Sentiment model with Word Embeddings)
 
 Reference
     [1] http://ceur-ws.org/Vol-1646/paper6.pdf
 
 """
 
+# Author: Ayan Sengupta
 
 #import warnings
 #from collections import defaultdict
@@ -18,9 +20,9 @@ import numpy as np
 import scipy
 from scipy.special import gammaln, psi
 from scipy.optimize import minimize
-from base import BaseEstimator
-from utils_tswe import sampleFromDirichlet, sampleFromCategorical, log_multi_beta, word_indices
-from utils_tswe import coherence_score_uci, coherence_score_umass, symmetric_kl_score, Hscore
+from .base import BaseEstimator
+from .utils import sampleFromDirichlet, sampleFromCategorical, log_multi_beta, word_indices
+from .utils import coherence_score_uci, coherence_score_umass, symmetric_kl_score, Hscore
 
 def L(v_k, embedding_matrix, N_k, mu=.01):
     factor1 = np.log(np.sum(np.exp(np.dot(v_k,embedding_matrix.T)))) * np.sum(N_k)
@@ -33,6 +35,10 @@ class TSWE(BaseEstimator):
     
     Parameters
     ----------
+    embedding_dim : int, optional (default=300)
+        Dimension of Word Embeddings and Topic Embeddings
+    lambda_ : float, optional (default=.1)
+        Lambda parameter controls the effect of word embeddings in the model. Higher lambda_ value denotes higher effect of embeddings.
     n_topic_components : int, optional (default=10)
         Number of topics.
     n_sentiment_components : int, optional (default=5)
@@ -85,8 +91,8 @@ class TSWE(BaseEstimator):
         `1 / (n_topic_components * n_sentiment_components)`.
     Examples
     --------
-    >>> from TSWE import TSWE
-    >>> from utils_tswe import coherence_score_uci
+    >>> from jointtsmodels.TSWE import TSWE
+    >>> from jointtsmodels.utils import coherence_score_uci
     >>> import pandas as pd
     >>> import numpy as np
     >>> from sklearn.feature_extraction.text import CountVectorizer
@@ -106,9 +112,24 @@ class TSWE(BaseEstimator):
     >>> lexicon_data = pd.read_excel('../lexicon/prior_sentiment.xlsx')
     >>> lexicon_data = lexicon_data.dropna()
     >>> lexicon_dict = dict(zip(lexicon_data['Word'],lexicon_data['Sentiment']))
-    >>> model = TSWE(n_topic_components=5,n_sentiment_components=5,
+    >>> embeddings_index = {}
+    >>> f = open('embeddings/glove.6B.100d.txt','r',encoding='utf8')
+    >>> for i, line in enumerate(f):
+            values = line.split()
+            word = values[0]
+            coefs = np.asarray(values[1:], dtype='float32')
+            embeddings_index[word] = coefs
+    >>> f.close()
+    >>> print('Found %s word vectors.' % len(embeddings_index))
+    >>> embedding_matrix = np.zeros((X.shape[1], 100))
+    >>> for i, word in enumerate(vocabulary):
+            if word in embeddings_index:
+                embedding_matrix[i] = embeddings_index[word]
+            else:
+                embedding_matrix[i] = np.zeros(100)
+    >>> model = TSWE(embedding_dim=100,n_topic_components=5,n_sentiment_components=5,
     ...     random_state=0)
-    >>> model.fit(X.toarray(), lexicon_dict)
+    >>> model.fit(X.toarray(), lexicon_dict, embedding_matrix)
     TSWE(...)
     >>> # get topics for some given samples:
     >>> model.transform()[:2]
@@ -233,9 +254,9 @@ class TSWE(BaseEstimator):
         #    forthFactor[k,:] = np.exp(np.dot(self.topic_embeddings[k,:],self.word_embeddings[v,:]))/np.sum(np.exp(np.dot(self.topic_embeddings[k,:],self.word_embeddings.T)))
         
         forthFactor = np.exp(np.dot(self.topic_embeddings,self.word_embeddings[v,:]))/np.sum(np.exp(np.dot(self.topic_embeddings,self.word_embeddings.T)),-1)
-        probabilities_ts *= firstFactor[:, np.newaxis]
+        probabilities_ts *= firstFactor[np.newaxis,:]
         #probabilities_ts *= secondFactor * thirdFactor
-        probabilities_ts *= secondFactor * ((1-self.lambda_)*thirdFactor + self.lambda_*forthFactor)
+        probabilities_ts *= secondFactor * ((1-self.lambda_)*thirdFactor + self.lambda_*forthFactor[:,np.newaxis])
         probabilities_ts /= np.sum(probabilities_ts)
         
         return probabilities_ts
@@ -379,29 +400,7 @@ class TSWE(BaseEstimator):
         -----------
         Log-likelihood score: float
         """
-        n_docs, vocabSize = self.wordOccurenceMatrix.shape
-        lik = 0
-
-        for z in range(self.n_topic_components):
-            for s in range(self.n_sentiment_components):
-                lik += log_multi_beta(self.n_vts[:,z, s]+self.beta)
-        
-        lik -= np.log(1-self.lambda_) * self.n_topic_components * self.n_sentiment_components * log_multi_beta(self.beta, vocabSize)
-        for z in range(self.n_topic_components):
-            value = np.exp(np.dot(self.topic_embeddings[z,:],self.word_embeddings.T))
-            value /= np.sum(value)
-            lik += np.log(self.lambda_) * np.sum(np.log(value))
-
-        for m in range(n_docs):
-            for z in range(self.n_sentiment_components):
-                lik += log_multi_beta(self.n_dst[m, z, :]+self.gammaVec)
-        
-            lik += log_multi_beta(self.n_ds[m,:]+self.alphaVec)
-        
-        lik -= n_docs * self.n_sentiment_components * log_multi_beta(self.gammaVec)
-        lik -= n_docs * log_multi_beta(self.alphaVec)
-    
-        return lik
+        raise NotImplementedError("To be implemented")
         
     def perplexity(self):
         """Calculate approximate perplexity for the whole corpus.
@@ -411,5 +410,4 @@ class TSWE(BaseEstimator):
         ------------
         score : float
         """
-        score = np.exp(-self.loglikelihood()/self.wordOccurenceMatrix.sum())
-        return score
+        raise NotImplementedError("To be implemented")

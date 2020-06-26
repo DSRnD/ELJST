@@ -1,10 +1,13 @@
 """
+(c) Ayan Sengupta - 2020
 License: MIT License
 
 This implementation of modified from sklearn's base estimator
 
 Base classes for all estimators
 """
+
+# Author: Ayan Sengupta
 
 import warnings
 from collections import defaultdict

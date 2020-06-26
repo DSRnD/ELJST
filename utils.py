@@ -1,244 +1,200 @@
-from scipy import spatial, sparse
-from scipy.stats import chi2
-from num2words import num2words
-from nltk.corpus import stopwords
-from nltk.stem import PorterStemmer
-from nltk.tokenize import word_tokenize
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-from bs4 import BeautifulSoup as bs
+"""
+(c) Ayan Sengupta - 2020
+License: MIT License
 
-import copy
-import nltk
-import scipy
-import multiprocessing
+Utility functions
+"""
 
 import numpy as np
-import pandas as pd
+import scipy
 
-stop_words = stopwords.words('english')
-lemmatizer = nltk.stem.WordNetLemmatizer()
-stemmer = nltk.stem.PorterStemmer()
-w_tokenizer = nltk.tokenize.WhitespaceTokenizer()
-
-def convert_numbers(k):
-    for i in range(len(k)):
-        try:
-            num2words(int(k[i]))
-            k[i] = " "
-        except:
-            pass
-    return k
-
-def preprocess_with_nums(pd):
-    pd = pd.str.lower()
-    pd = pd.str.replace('[{}]'.format('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~\n\t'), ' ')
-    pd = pd.apply(lambda x: [w for w in w_tokenizer.tokenize(x)])
-#     pd = pd.apply(lambda x: convert_numbers(x))
-    pd = pd.str.join(' ')
-    
-    pd = pd.apply(lambda x: [lemmatizer.lemmatize(w) for w in w_tokenizer.tokenize(x)])    
-    pd = pd.apply(lambda x: [lemmatizer.lemmatize(w, 'v') for w in x])
-    pd = pd.apply(lambda x: [item for item in x if item not in stop_words])
-    pd = pd.apply(lambda x: [item for item in x if len(item)>1])
-    return pd
+def sampleFromDirichlet(alpha):
+    """
+    Sample from a Dirichlet distribution
+    Parameter
+    ----------
+    alpha: array-like 
+        Dirichlet distribution parameter
+    Returns
+    ----------
+    x: array-like 
+        sampled from dirichlet distribution
+    """
+    return np.random.dirichlet(alpha)
 
 
-def preprocess(pd):
-    pd = pd.str.lower()
-    pd = pd.str.replace('[^a-zA-Z]', ' ')
-    pd = pd.apply(lambda x: [w for w in w_tokenizer.tokenize(x)])
-    pd = pd.str.join(' ')
-    
-    pd = pd.apply(lambda x: [lemmatizer.lemmatize(w) for w in w_tokenizer.tokenize(x)])    
-    pd = pd.apply(lambda x: [lemmatizer.lemmatize(w, 'v') for w in x])
-    pd = pd.apply(lambda x: [item for item in x if item not in stop_words])
-    pd = pd.apply(lambda x: [item for item in x if len(item)>3])
-    pd = pd.apply(lambda x: [i[0] for i in nltk.pos_tag(x) if i[1] in ['JJ', 'JJR', 'JJS', 'NN', 'NNS', 'NNP', 'NNPS']])
-    pd = pd.apply(lambda x: " ".join(x))
-    return pd
+def sampleFromCategorical(theta):
+    """
+    Samples from a categorical/Multinomial distribution
+    Parameter
+    -----------
+    theta: array-like
+        Categorical/Multinomial sample
+    Returns
+    -----------
+    x: int
+        Sample from distribution
+    """
+    theta = theta/np.sum(theta)
+    return np.random.multinomial(1, theta).argmax()
 
-def preprocess2(pd):
-    pd = pd.str.lower()
-    pd = pd.str.replace('[^a-zA-Z]', ' ')
-    pd = pd.apply(lambda x: [w for w in w_tokenizer.tokenize(x)])
-    pd = pd.str.join(' ')
-    
-    pd = pd.apply(lambda x: [lemmatizer.lemmatize(w) for w in w_tokenizer.tokenize(x)])
-    pd = pd.apply(lambda x: [item for item in x if item not in stop_words])
-    pd = pd.apply(lambda x: " ".join(x))
-    return pd
+def log_multi_beta(alpha, K=None):
+    """
+    Logarithm of the multinomial beta function.
+    Parameter
+    ----------
+    alpha: array-like
+        Categorical/Multinomial distribution
+    K: int, optional
+        Length of distribution vector
+    Returns
+    -----------
+    x: int
+        Log-Multinomial value of vector. Used in log-likelihood calculation.
+    """
+    if K is None:
+        # alpha is assumed to be a vector
+        return np.sum(scipy.special.gammaln(alpha)) - scipy.special.gammaln(np.sum(alpha))
+    else:
+        # alpha is assumed to be a scalar
+        return K * scipy.special.gammaln(alpha) - scipy.special.gammaln(K*alpha)
 
-# def preprocess(pd):
-#     pd = pd.str.lower()
-#     pd = pd.str.replace('[{}]'.format('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~\n\t'), ' ')
-#     pd = pd.str.replace('\d+', ' ')
-#     pd = pd.apply(lambda x: [w for w in w_tokenizer.tokenize(x)])
-#     pd = pd.apply(lambda x: convert_numbers(x))
-#     pd = pd.str.join(' ')
-    
-#     pd = pd.apply(lambda x: [lemmatizer.lemmatize(w) for w in w_tokenizer.tokenize(x)])    
-#     pd = pd.apply(lambda x: [lemmatizer.lemmatize(w, 'v') for w in x])
-#     pd = pd.apply(lambda x: [item for item in x if item not in stop_words])
-#     pd = pd.apply(lambda x: [item for item in x if len(item)>2])
-#     pd = pd.apply(lambda x: " ".join(x))
-#     return pd
+def word_indices(wordOccuranceVec):
+    """
+    Turn a document vector of size vocab_size to a sequence
+    of word indices. The word indices are between 0 and
+    vocab_size-1. The sequence length is equal to the document length.
+    Parameter
+    ----------
+    wordOccuranceVec: array-like
+        Vectorized format of each document
+    Returns
+    ----------
+    idx: index
+        Index of each word in document
+    """
+    for idx in wordOccuranceVec.nonzero()[0]:
+        for i in range(int(wordOccuranceVec[idx])):
+            yield idx
 
-def preprocess_lite(pd):
-    pd = pd.str.lower()
-    pd = pd.str.replace('[{}]'.format('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~\n\t'), ' ')
-    pd = pd.apply(lambda x: [w for w in w_tokenizer.tokenize(x)])
-    pd = pd.apply(lambda x: convert_numbers(x))
-    pd = pd.str.join(' ')
-    
-    pd = pd.apply(lambda x: [lemmatizer.lemmatize(w) for w in w_tokenizer.tokenize(x)])    
-    pd = pd.apply(lambda x: [item for item in x if len(item)>1])
-    return pd
-
-def processReviews(reviews, window=5, MAX_VOCAB_SIZE=50000):
-    vectorizer = CountVectorizer(analyzer="word", tokenizer=None, max_df=0.5, min_df = 5, max_features=MAX_VOCAB_SIZE)
-    count_matrix = vectorizer.fit_transform(reviews)
-    words = vectorizer.get_feature_names()
-    vocabulary = dict(zip(words,np.arange(len(words))))
-    inv_vocabulary = dict(zip(np.arange(len(words)),words))
-    return count_matrix.toarray(), vocabulary, words
-
-def get_cosine(a, b):
-    return 1 - spatial.distance.cosine(a, b)
-
-def get_cosine_multi(a):
-    return 1 - spatial.distance.cosine(a[0], a[1])
-
-def print_if_mod(idx, n):
-    if idx % n == 0:
-        print(idx)
-        
-def extract_body(m):
-    b = bs(m)
-    t = b.find_all('code')
-    for tag in t:
-        tag.replace_with('')
-    a = list({tag.name for tag in b.find_all()})
-    for i in a:
-        b = str(b).replace("<"+str(i)+">", " ")
-        b = str(b).replace("</"+str(i)+">", " ")
-    return b
-
-def coherence_score(X, topic_sentiment_df, vocabulary):
-    X[X>1] = 1    
-    totalcnt = len(topic_sentiment_df)
+def coherence_score_uci(X,inv_vocabulary,top_words):
+    """
+    Extrinsic UCI coherence measure
+    Parameter
+    ----------
+    X : array-like, shape=(n_samples, n_features)
+            Document word matrix.
+    inv_vocabulary: dict
+        Dictionary of index and vocabulary from vectorizer. 
+    top_words: list
+        List of top words for each topic-sentiment pair
+    Returns
+    -----------
+    score: float
+    """
+    wordoccurances = (X > 0).astype(int)
+    totalcnt = 0
     total = 0
-    for allwords in topic_sentiment_df:
+    for allwords in top_words:
         for word1 in allwords:
             for word2 in allwords:
                 if word1 != word2:
-                    ind1 = vocabulary[word1]
-                    ind2 = vocabulary[word2]
-                    total += np.log((np.matmul(X[:,ind1].T, X[:,ind2]) + 1.0)/np.sum(X[:,ind2]))
-    return total/(2*totalcnt)
-
-def coherence_score2(wordoccurances, topic_sentiment_df, vocabulary):
-    wordoccurances[wordoccurances>1] = 1    
-    totalcnt = 0 #len(topic_sentiment_df)
-    total = 0
-    for allwords in topic_sentiment_df:
-        for word1 in allwords:
-            for word2 in allwords:
-                if word1 != word2:
-                    ind1 = vocabulary[word1]
-                    ind2 = vocabulary[word2]
+                    ind1 = inv_vocabulary[word1]
+                    ind2 = inv_vocabulary[word2]
                     if ind1 > ind2:
-                        total += np.log((wordoccurances.shape[0]*np.matmul(wordoccurances[:,ind1],wordoccurances[:,ind2]) + 1.0)/( wordoccurances[:,ind1].sum()*wordoccurances [:,ind2].sum()))
+                        total += np.log((wordoccurances.shape[0]*(np.matmul(wordoccurances[:,ind1],wordoccurances[:,ind2])+1))/(wordoccurances[:,ind1].sum()*wordoccurances[:,ind2].sum()))
                         totalcnt += 1
     return total/totalcnt
+    
+def coherence_score_umass(X,inv_vocabulary,top_words):
+    """
+    Extrinsic UMass coherence measure
+    Parameter
+    ----------
+    X : array-like, shape=(n_samples, n_features)
+            Document word matrix.
+    inv_vocabulary: dict
+        Dictionary of index and vocabulary from vectorizer. 
+    top_words: list
+        List of top words for each topic-sentiment pair
+    Returns
+    -----------
+    score: float
+    """
+    wordoccurances = (X > 0).astype(int)
+    totalcnt = 0
+    total = 0
+    for i in range(len(top_words)):
+        allwords = topic_sentiment_df.top_words.iloc[i] #ast.literal_eval(topic_sentiment_df.top_words.iloc[i])
+        for word1 in allwords:
+            for word2 in allwords:
+                if word1 != word2:
+                    ind1 = inv_vocabulary[word1]
+                    ind2 = inv_vocabulary[word2]
+                    if ind1 > ind2:
+                        total += np.log((np.matmul(wordoccurances[:,ind1],wordoccurances[:,ind2]) + 1)/np.sum(wordoccurances[:,ind1]))
+                        totalcnt += 1
+    return total/totalcnt
+    
+def symmetric_kl_score(pk,qk):
+    """
+    Symmetric KL divergence score between two probability distributions
+    Parameter
+    ----------
+    pk: array-like
+        Probability distribution
+    qk: array-like
+        Probability distribution
+    Returns
+    -----------
+    score: float
+        Symmetric KL divergence score between pk and qk
+    """
+    score = scipy.stats.entropy(pk,qk)*.5 + scipy.stats.entropy(qk,pk)*.5
+    return score
 
-def kl_score(pk,qk):
-    return (scipy.stats.entropy(pk,qk)*.5 + scipy.stats.entropy(qk,pk)*.5)
-
-def get_hscore(dt_distribution, X, k):
-    testlen = X.shape[0]
-    all_kl_scores = np.zeros((testlen, testlen))
-    for i in range(testlen-1):
-        for j in range(i+1,testlen):
-            score = kl_score(dt_distribution[i],dt_distribution[j])
-            all_kl_scores[i,j] = score
-            all_kl_scores[j,i] = score
-
-    dt = np.zeros((X.shape[0], k))
-
-    for i in range(X.shape[0]):
-        dt[i, dt_distribution[i].argmax()]=1
+def Hscore(transformedX, subsample=1.0):
+    """
+    H score on transformed matrix. H score is calculated using inter cluster KL divergence score and intra cluster KL divergence score.
+    Reference
+    ----------
+        [1] http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.402.4032&rep=rep1&type=pdf
+        
+    Parameter
+    ----------
+    transformedX: array-like
+        Probability distribution
+    subsample: float, optional (default=1)
+        subsample size for H score calculation
+    Returns
+    -----------
+    score: float
+    """
+    subsample_size = int(transformedX.shape[0]*subsample)
+    transformedX_ = transformedX[:subsample_size,:]
+    
+    n_components = transformedX.shape[1]
+    
+    all_kl_scores = scipy.spatial.distance.cdist(transformedX_, transformedX_, symmetric_kl_score)
+    dt = (transformedX_ == transformedX_.max(axis=1, keepdims=True)).astype(int)
 
     intradist = 0
-    for i in range(k):
+    for i in range(n_components):
         cnt = dt[:,i].sum()
         tmp = np.outer(dt[:,i],dt[:,i])
         tmp = tmp * all_kl_scores
         intradist += tmp.sum()*1.0/(cnt*(cnt-1))
-#         print(cnt, tmp.sum(), intradist)
-    intradist = intradist/k
-
+    intradist = intradist/n_components
+    
     interdist = 0
-    for i in range(k):
-       for j in range(k):
+    for i in range(n_components):
+       for j in range(n_components):
            if i != j:
              cnt_i = dt[:,i].sum()
              cnt_j = dt[:,j].sum()
              tmp = np.outer(dt[:,i], dt[:,j])
              tmp = tmp * all_kl_scores
              interdist += tmp.sum()*1.0/(cnt_i*cnt_j)
-    interdist = interdist/(k*(k-1))
-    return intradist/interdist
+    interdist = interdist/(n_components*(n_components-1))
 
-def kl_score_multi(comb):
-    pk, qk = comb[0], comb[1]
-    return (scipy.stats.entropy(pk, qk)*.5 + scipy.stats.entropy(qk,pk)*.5)
-
-def get_hscore_multi(dt_distribution_, X_, k, testlen):
-    
-    index = np.random.choice(X_.shape[0], testlen, replace=False)
-    
-    dt_distribution = dt_distribution_[index]
-    X = X_[index]
-
-    all_kl_scores = np.zeros((testlen, testlen))
-
-    combinations = []
-    dt_combinations = []
-    for i in range(testlen-1):
-        for j in range(i+1,testlen):
-            combinations.append([i, j])
-            dt_combinations.append((dt_distribution[i], dt_distribution[j]))
-
-    pool = multiprocessing.Pool(10)
-    scores = pool.map(kl_score_multi, dt_combinations)
-    pool.close()
-
-    for idx, (i, j) in enumerate(combinations):
-        all_kl_scores[i, j] = scores[idx]
-        all_kl_scores[j, i] = all_kl_scores[i, j]
-
-    dt = np.zeros((X.shape[0], k))
-
-    for i in range(X.shape[0]):
-        dt[i, dt_distribution[i].argmax()]=1
-
-    intradist = 0
-    for i in range(k):
-        cnt = dt[:,i].sum()
-        tmp = np.outer(dt[:,i],dt[:,i])
-        tmp = tmp * all_kl_scores
-        intradist += tmp.sum()*1.0/(cnt*(cnt-1))
-    #         print(cnt, tmp.sum(), intradist)
-    intradist = intradist/k
-
-    interdist = 0
-    for i in range(k):
-       for j in range(k):
-           if i != j:
-             cnt_i = dt[:,i].sum()
-             cnt_j = dt[:,j].sum()
-             tmp = np.outer(dt[:,i], dt[:,j])
-             tmp = tmp * all_kl_scores
-             interdist += tmp.sum()*1.0/(cnt_i*cnt_j)
-    interdist = interdist/(k*(k-1))
     return intradist/interdist
